@@ -1,3 +1,4 @@
+from contextlib import suppress
 import os
 import shutil
 import tempfile
@@ -5,7 +6,7 @@ import unittest
 import h5py
 import numpy as np
 import tifffile
-import writer
+from nxtomowriter import writer 
 
 
 class TestWriter(unittest.TestCase):
@@ -16,8 +17,6 @@ class TestWriter(unittest.TestCase):
 
     def tearDown(self):
         # Remove the directory after the test
-        for fd in self.file_descriptors:
-            os.close(fd)
         shutil.rmtree(self.test_dir)
 
     def testAddNxtomoEntry(self):
@@ -26,8 +25,7 @@ class TestWriter(unittest.TestCase):
         image_keys = [2, 2, 2, 0, 0, 0, 0, 1, 1, 1]
         angles = [0, 0, 0, 0, 45, 90, 180, 180, 180, 180]
 
-        rng = np.random.default_rng()
-        rints = rng.integers(0, np.iinfo(np.uint16).max, size=(10, 128, 128), dtype=np.uint16)
+        rints = np.random.randint(0, np.iinfo(np.uint16).max, size=(10, 128, 128)).astype(np.uint16)
         for i in range(rints.shape[0]):
             image_names.append(os.path.join(self.test_dir, f'image_{i}.tif'))
             tifffile.imsave(image_names[-1], rints[i])
@@ -38,9 +36,9 @@ class TestWriter(unittest.TestCase):
             np.testing.assert_array_equal(rints, new_file['/entry/tomo_entry/data/data'])
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
-            self.assertEqual(new_file['/entry/tomo_entry/sample/name'][()], b'')
-            self.assertEqual(new_file['/entry/tomo_entry/definition'][()], b'NXtomo')
-            self.assertEqual(new_file['/entry/tomo_entry/title'][()], b'')
+            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], '')
+            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
+            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], '')
 
         filename = os.path.join(self.test_dir, 'output.nxs')
        
@@ -56,23 +54,9 @@ class TestWriter(unittest.TestCase):
             np.testing.assert_array_equal(rints, new_file['/entry/tomo_entry/data/data'])
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
-            self.assertEqual(new_file['/entry/tomo_entry/sample/name'][()], b'Sample')
-            self.assertEqual(new_file['/entry/tomo_entry/definition'][()], b'NXtomo')
-            self.assertEqual(new_file['/entry/tomo_entry/title'][()], b'Title')
-   
-    @staticmethod
-    def createFakeImages(dir, count=1):
-        paths = []
-        
-        for i in range(count):
-            ext = '.TIF' if i % 2 else '.tiff'
-            try:
-                fd, tp =tempfile.mkstemp(dir=dir, prefix=f'{i}', suffix=ext)
-                paths.append(tp)
-            finally:
-                os.close(fd)
-
-        return paths
+            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], 'Sample')
+            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
+            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], 'Title')
 
     def testPrepareImages(self):
         self.assertRaises(ValueError, writer.prepare_images, [], '')
@@ -121,19 +105,44 @@ class TestWriter(unittest.TestCase):
         self.assertEqual(keys, [2, 2, 1, 1, 1, 0, 0, 0, 1, 1, 2, 2, 2])
         self.assertEqual(angles, [0, 0, 0, 0, 0, 0, 170, 180, 170, 170, 170, 170, 170])
 
-
     def testGetTiffs(self):
         self.assertEqual(writer.get_tiffs(self.test_dir), [])
 
         tempfile.mkdtemp(dir=self.test_dir)
 
-        fd, _ = tempfile.mkstemp(dir=self.test_dir, suffix='.txt')
+        try:
+            fd, _ = tempfile.mkstemp(dir=self.test_dir, suffix='.txt')
+        finally:
+            os.close(fd)
+        
         self.file_descriptors.append(fd)
         self.assertEqual(writer.get_tiffs(self.test_dir), [])
 
         paths = self.createFakeImages(self.test_dir, 2)
         self.assertEqual(writer.get_tiffs(self.test_dir), paths)
+    
+    @staticmethod
+    def createFakeImages(dir, count=1):
+        paths = []
+        
+        for i in range(count):
+            ext = '.TIF' if i % 2 else '.tiff'
+            try:
+                fd, tp =tempfile.mkstemp(dir=dir, prefix=f'{i}', suffix=ext)
+                paths.append(tp)
+            finally:
+                os.close(fd)
 
+        return paths
+
+    def checkStringEqual(self, first, second):
+        with suppress(AttributeError):
+            first = first.decode('utf-8')
+        
+        with suppress(AttributeError):
+            second = second.decode('utf-8')
+
+        self.assertEqual(first, second)
 
 if __name__ == '__main__':
     unittest.main()

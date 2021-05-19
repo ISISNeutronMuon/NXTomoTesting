@@ -8,4 +8,9 @@ __pycache__/
 .vscode
 
 # Others
-mod_IMAT00008300.nxs
+IMAT00008300_with_tomo.nxs
+
+# Build
+build
+dist
+nxtomowriter.egg-info

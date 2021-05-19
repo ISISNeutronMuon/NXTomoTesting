@@ -167,14 +167,12 @@ def prepare_images(rot_angles, projections, dark_before='', flat_before='', half
     return image_names, image_keys, angles
 
 
-def save_tomo_to_nexus(in_filename, out_filename, rot_angles, projections, dark_before='', flat_before='', 
-                       half_circle='', flat_after='', dark_after=''):
-    """Saves tomography dat to a given nexus file using the NXtomo standard
+def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_before='', 
+                       half_circle='', flat_after='', dark_after='', make_copy=True):
+    """Saves tomography data to a given nexus file using the NXtomo standard
 
-    :param in_filename: path of input nexus file 
-    :type in_filename: str
-    :param out_filename: path of output nexus file 
-    :type out_filename: str
+    :param filename: path of input nexus file 
+    :type filename: str
     :param rot_angles: list of rotation angles for projection images 
     :type rot_angles: List[float]
     :param projections: directory of projection images 
@@ -189,28 +187,18 @@ def save_tomo_to_nexus(in_filename, out_filename, rot_angles, projections, dark_
     :type flat_after: str
     :param dark_after: directory of dark after images 
     :type dark_after: str
+    :param make_copy: indicates tomo entry should be added to copy of the nexus file 
+    :type make_copy: bool
     """
     image_names, image_keys, angles = prepare_images(rot_angles, projections, dark_before, flat_before, half_circle,  
                                                      flat_after, dark_after)
-    
-    shutil.copyfile(in_filename, out_filename)
-    add_nxtomo_entry(os.path.abspath(out_filename), image_names, image_keys, angles)
+    out_filename = filename 
+    if make_copy:
+        tmp = os.path.splitext(filename)
+        out_filename = f'{tmp[0]}_with_tomo{tmp[1]}'
+        shutil.copyfile(filename, out_filename)
+        
+    add_nxtomo_entry(out_filename, image_names, image_keys, angles)
 
 
-if __name__ == '__main__':  
-    in_filename = 'IMAT00008300.nxs'
-    out_filename = f'mod_{in_filename}'
 
-    projection_path = 'D:/Downloads/dataset_phantom_rebin122_150um/modified/Tomo'
-    angles = np.linspace(0, 390, 1125).tolist()
-    
-    # Optional
-    dark_before_path = 'D:/Downloads/dataset_phantom_rebin122_150um/modified/dark_before' 
-    flat_before_path = 'D:/Downloads/dataset_phantom_rebin122_150um/modified/flat_before'  
-    flat_after_path = 'D:/Downloads/dataset_phantom_rebin122_150um/modified/flat_after'
-    dark_after_path = 'D:/Downloads/dataset_phantom_rebin122_150um/modified/dark_after'
-
-
-    save_tomo_to_nexus(in_filename, out_filename, angles, projection_path, dark_before=dark_before_path,
-                       flat_before=flat_before_path, flat_after=flat_after_path,
-                       dark_after=dark_after_path)
