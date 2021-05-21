@@ -8,6 +8,7 @@ setup(
     install_requires=[
         'h5py>=2.10.0',
         'numpy>=1.15.4',
-        'tifffile>=2020.6.3'
+        'tifffile>=2020.6.3',
+        'tqdm>=4.40'
     ]
 )

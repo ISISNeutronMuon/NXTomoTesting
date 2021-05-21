@@ -3,6 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import unittest.mock as mock
 import h5py
 import numpy as np
 import tifffile
@@ -19,7 +20,8 @@ class TestWriter(unittest.TestCase):
         # Remove the directory after the test
         shutil.rmtree(self.test_dir)
 
-    def testAddNxtomoEntry(self):
+    @mock.patch('nxtomowriter.writer.tqdm', autospec=True)
+    def testAddNxtomoEntry(self, tqdm):
         filename = os.path.join(self.test_dir, 'output.nxs')
         image_names = []
         image_keys = [2, 2, 2, 0, 0, 0, 0, 1, 1, 1]
@@ -48,12 +50,16 @@ class TestWriter(unittest.TestCase):
             main_entry['title'] = 'Title'
             main_entry['sample/name'] = 'Sample'
         
-        writer.add_nxtomo_entry(filename, image_names, image_keys, angles)
+        translations = np.random.randint(-1000, 1000, size=(10, 3)).astype(np.float32)
+        writer.add_nxtomo_entry(filename, image_names, image_keys, angles, translations)
 
         with h5py.File(filename, 'r') as new_file:
             np.testing.assert_array_equal(rints, new_file['/entry/tomo_entry/data/data'])
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
+            np.testing.assert_array_almost_equal(translations[:, 0], new_file['/entry/tomo_entry/sample/x_translation'])
+            np.testing.assert_array_almost_equal(translations[:, 1], new_file['/entry/tomo_entry/sample/y_translation'])
+            np.testing.assert_array_almost_equal(translations[:, 2], new_file['/entry/tomo_entry/sample/z_translation'])
             self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], 'Sample')
             self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
             self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], 'Title')
@@ -93,7 +99,7 @@ class TestWriter(unittest.TestCase):
                                                     flat_after=flat_after_dir)
         self.assertEqual(names, [*db_paths, *proj_paths, *hc_paths, *fa_paths])
         self.assertEqual(keys, [2, 2, 0, 0, 0, 1, 1])
-        self.assertEqual(angles, [0, 0, 0, 170, 180, 170, 170])
+        self.assertEqual(angles, [0, 0, 0, 170, 180, 0, 0])
 
         flat_before_dir = tempfile.mkdtemp(dir=self.test_dir)
         fb_paths = self.createFakeImages(flat_before_dir, 3)
@@ -103,15 +109,15 @@ class TestWriter(unittest.TestCase):
                                                     flat_after_dir, dark_after_dir)
         self.assertEqual(names, [*db_paths, *fb_paths, *proj_paths, *hc_paths, *fa_paths, *da_paths])
         self.assertEqual(keys, [2, 2, 1, 1, 1, 0, 0, 0, 1, 1, 2, 2, 2])
-        self.assertEqual(angles, [0, 0, 0, 0, 0, 0, 170, 180, 170, 170, 170, 170, 170])
+        self.assertEqual(angles, [0, 0, 0, 0, 0, 0, 170, 180, 0, 0, 0, 0, 0])
 
     def testGetTiffs(self):
         self.assertEqual(writer.get_tiffs(self.test_dir), [])
 
-        tempfile.mkdtemp(dir=self.test_dir)
+        tempfile.mkdtemp(dir=self.test_dir)  # add empty folder to dir
 
         try:
-            fd, _ = tempfile.mkstemp(dir=self.test_dir, suffix='.txt')
+            fd, _ = tempfile.mkstemp(dir=self.test_dir, suffix='.txt') # add text file to dir
         finally:
             os.close(fd)
         
@@ -120,7 +126,49 @@ class TestWriter(unittest.TestCase):
 
         paths = self.createFakeImages(self.test_dir, 2)
         self.assertEqual(writer.get_tiffs(self.test_dir), paths)
-    
+
+    @mock.patch('nxtomowriter.writer.add_nxtomo_entry', autospec=True)
+    def testSaveTomoToNexus(self, add_func):
+        proj_dir = tempfile.mkdtemp(dir=self.test_dir)
+        _ = self.createFakeImages(proj_dir, 5)
+
+        filename = os.path.join(self.test_dir, 'random.nxs')
+        rot_angles = [0, 45, 90, 135, 180]
+        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir)
+        self.assertEqual(add_func.call_args[0][0], filename)
+        add_func.assert_called()
+        self.assertIsNone(add_func.call_args[0][4])
+        
+        try:
+            fd, filename = tempfile.mkstemp(dir=self.test_dir, suffix='.nxs')
+        finally:
+            os.close(fd)
+            
+        copy_name = f'{filename[:-4]}_with_tomo.nxs'
+        self.assertRaises(ValueError, writer.save_tomo_to_nexus, filename, rot_angles, proj_dir, 
+                          make_copy=False, open_beam_position=(10, 10, 10))
+
+        flat_after_dir = tempfile.mkdtemp(dir=self.test_dir)
+        _ = self.createFakeImages(flat_after_dir, 2)
+
+        add_func.reset_mock()
+        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
+                                  make_copy=False, sample_position=(10, 10, 10))
+        
+        trans = np.tile([10, 10, 10], (7, 1))
+        add_func.assert_called()
+        np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
+        self.assertFalse(os.path.isfile(copy_name))
+
+        add_func.reset_mock()
+        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
+                                  make_copy=True, open_beam_position=(12, 11, 9), sample_position=(10, 10, 10))
+        
+        trans[-2:, :] = [12, 11, 9]
+        add_func.assert_called()
+        np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
+        self.assertTrue(os.path.isfile(copy_name))
+
     @staticmethod
     def createFakeImages(dir, count=1):
         paths = []

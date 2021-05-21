@@ -1,13 +1,15 @@
 from contextlib import suppress
 import datetime
 import os
+from os.path import sameopenfile
 import shutil
 import h5py
 import numpy as np
 import tifffile
+from tqdm import tqdm
 
 
-def add_nxtomo_entry(filename, image_names, image_keys, angles):
+def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=None):
     """Adds nxtomo entry to the given nexus file 
 
     :param filename: path to nexus file 
@@ -60,14 +62,19 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles):
         
         detector = instrument.create_group('detector')
         detector.attrs['NX_class'] = u'NXdetector'
-        detector['image_key'] = np.array(image_keys, dtype=np.uint8)
-        image = tifffile.imread(image_names[0])
-        shape = (len(image_names), *image.shape)
-        dset = nxs_file.create_dataset(f'{detector.name}/data', shape=shape, dtype=image.dtype)
-        dset[0, :, :] = image
-        for index, name in enumerate(image_names[1:]):
-            image = tifffile.imread(name)
-            dset[index + 1, :, :] = image
+        
+        image_count = len(image_names)
+        with tqdm(total=image_count, bar_format='{l_bar}{bar:60}{r_bar}{bar:-10b}') as progress_bar:
+            detector['image_key'] = np.array(image_keys, dtype=np.uint8)
+            image = tifffile.imread(image_names[0])
+            shape = (image_count, *image.shape)
+            dset = nxs_file.create_dataset(f'{detector.name}/data', shape=shape, dtype=image.dtype)
+            dset[0, :, :] = image
+            progress_bar.update(1)
+            for index, name in enumerate(image_names[1:]):
+                image = tifffile.imread(name)
+                dset[index + 1, :, :] = image
+                progress_bar.update(1)
         
         sample = entry.create_group('sample')
         sample.attrs['NX_class'] = u'NXsample'
@@ -75,6 +82,14 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles):
         sample['rotation_angle'] = np.array(angles, dtype=np.float32)
         sample['rotation_angle'].attrs['units'] = 'degrees'
         sample['rotation_angle'].attrs['axis'] = 1
+
+        if translations is not None:
+            sample['x_translation'] = translations[:, 0].astype(np.float32)
+            sample['x_translation'].attrs['units'] = 'mm'
+            sample['y_translation'] = translations[:, 1].astype(np.float32)
+            sample['y_translation'].attrs['units'] = 'mm'
+            sample['z_translation'] = translations[:, 2].astype(np.float32)
+            sample['z_translation'].attrs['units'] = 'mm'
 
         # Create the LINKS         
         data = entry.create_group('data')
@@ -132,8 +147,7 @@ def prepare_images(rot_angles, projections, dark_before='', flat_before='', half
     """
     if not projections:
         raise ValueError('A path to the projection images must be provided!')
-    
-    start_angle, stop_angle = rot_angles[0], rot_angles[-1]
+
     paths = [dark_before, flat_before, projections, half_circle, flat_after, dark_after]  
     keys = [2, 1, 0, 0, 1, 2]
 
@@ -153,27 +167,31 @@ def prepare_images(rot_angles, projections, dark_before='', flat_before='', half
         image_names.extend(images)
         image_keys.extend([key] * size)
         
-        if index < 2:  # before images
-            angles.extend([start_angle] * size)
-        elif index == 2:  # projection
+        if index == 2:  # projection
             if size != len(rot_angles):
                 raise ValueError(f'The number of projection images {size} does not match the number of angles {len(rot_angles)}.')
             angles.extend(rot_angles)
         elif index == 3:  # 180 image
             angles.extend([180.0] * size)
-        else:  # after images
-            angles.extend([stop_angle] * size)
+        else:  # # before and after images
+            angles.extend([0.0] * size)
+
 
     return image_names, image_keys, angles
 
 
-def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_before='', 
-                       half_circle='', flat_after='', dark_after='', make_copy=True):
-    """Saves tomography data to a given nexus file using the NXtomo standard
+def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_before='', half_circle='', 
+                       flat_after='', dark_after='', open_beam_position=(), sample_position=(), make_copy=True):
+    """Saves tomography data to a given nexus file using the NXtomo standard. If the nexus file exist the 
+    NXtomo entry (tomo_entry) will be appended as a subentry of the first NXentry in the file. If the file 
+    does not exist or the file has no NXentry, the file will be created if needed and a new entry will be 
+    created then the NXtomo entry will be appended to it (/entry/tomo_entry). If make_copy is True (default), 
+    the NXtomo entry will be appended to a copy of the nexus file instead. The copied file will be in the same 
+    directory with the suffix "_with_tomo" appended to the original filename.   
 
-    :param filename: path of input nexus file 
+    :param filename: path of nexus file 
     :type filename: str
-    :param rot_angles: list of rotation angles for projection images 
+    :param rot_angles: list of rotation angles for projection images (in degrees)
     :type rot_angles: List[float]
     :param projections: directory of projection images 
     :type projections: str
@@ -187,18 +205,31 @@ def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_b
     :type flat_after: str
     :param dark_after: directory of dark after images 
     :type dark_after: str
+    :param open_beam_position: X, Y, Z, positioner (in mm) values when imaging open beam 
+    :type open_beam_position: [float, float, float]
+    :param open_beam_position: X, Y, Z, positioner values (in mm)  when imaging sample 
+    :type open_beam_position: [float, float, float]
     :param make_copy: indicates tomo entry should be added to copy of the nexus file 
     :type make_copy: bool
     """
     image_names, image_keys, angles = prepare_images(rot_angles, projections, dark_before, flat_before, half_circle,  
                                                      flat_after, dark_after)
+
+    if not sample_position and not open_beam_position:
+        translations = None
+    elif sample_position and open_beam_position:
+        translations = np.tile(open_beam_position, (len(image_names), 1))
+        translations[np.argwhere(np.equal(image_keys, 0)), :] = sample_position
+    elif sample_position:
+        translations = np.tile(sample_position, (len(image_names), 1))
+    else:
+        raise ValueError(f'The sample position is also required when setting open beam position.')
+    
     out_filename = filename 
-    if make_copy:
+     
+    if os.path.isfile(filename) and make_copy:
         tmp = os.path.splitext(filename)
         out_filename = f'{tmp[0]}_with_tomo{tmp[1]}'
         shutil.copyfile(filename, out_filename)
         
-    add_nxtomo_entry(out_filename, image_names, image_keys, angles)
-
-
-
+    add_nxtomo_entry(out_filename, image_names, image_keys, angles, translations)
