@@ -38,6 +38,7 @@ class TestWriter(unittest.TestCase):
             np.testing.assert_array_equal(rints, new_file['/entry/tomo_entry/data/data'])
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
+            self.assertEqual(new_file['/entry/tomo_entry/data/rotation_angle'].attrs['axis'], 1)
             self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], '')
             self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
             self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], '')
@@ -51,12 +52,13 @@ class TestWriter(unittest.TestCase):
             main_entry['sample/name'] = 'Sample'
         
         translations = np.random.randint(-1000, 1000, size=(10, 3)).astype(np.float32)
-        writer.add_nxtomo_entry(filename, image_names, image_keys, angles, translations)
+        writer.add_nxtomo_entry(filename, image_names, image_keys, angles, translations, rotation_axis=0)
 
         with h5py.File(filename, 'r') as new_file:
             np.testing.assert_array_equal(rints, new_file['/entry/tomo_entry/data/data'])
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
+            self.assertEqual(new_file['/entry/tomo_entry/data/rotation_angle'].attrs['axis'], 0)
             np.testing.assert_array_almost_equal(translations[:, 0], new_file['/entry/tomo_entry/sample/x_translation'])
             np.testing.assert_array_almost_equal(translations[:, 1], new_file['/entry/tomo_entry/sample/y_translation'])
             np.testing.assert_array_almost_equal(translations[:, 2], new_file['/entry/tomo_entry/sample/z_translation'])
@@ -143,7 +145,7 @@ class TestWriter(unittest.TestCase):
             fd, filename = tempfile.mkstemp(dir=self.test_dir, suffix='.nxs')
         finally:
             os.close(fd)
-            
+
         copy_name = f'{filename[:-4]}_with_tomo.nxs'
         self.assertRaises(ValueError, writer.save_tomo_to_nexus, filename, rot_angles, proj_dir, 
                           make_copy=False, open_beam_position=(10, 10, 10))
@@ -153,20 +155,22 @@ class TestWriter(unittest.TestCase):
 
         add_func.reset_mock()
         writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
-                                  make_copy=False, sample_position=(10, 10, 10))
+                                  make_copy=False, projection_position=(10, 10, 10))
         
         trans = np.tile([10, 10, 10], (7, 1))
         add_func.assert_called()
         np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
+        self.assertEqual(add_func.call_args[0][5], 1)
         self.assertFalse(os.path.isfile(copy_name))
 
         add_func.reset_mock()
-        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
-                                  make_copy=True, open_beam_position=(12, 11, 9), sample_position=(10, 10, 10))
+        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, rotation_axis=0, 
+                                  make_copy=True, open_beam_position=(12, 11, 9), projection_position=(10, 10, 10))
         
         trans[-2:, :] = [12, 11, 9]
         add_func.assert_called()
         np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
+        self.assertEqual(add_func.call_args[0][5], 0)
         self.assertTrue(os.path.isfile(copy_name))
 
     @staticmethod

@@ -1,8 +1,9 @@
 from setuptools import setup, find_packages
+from nxtomowriter import version
 
 setup(
     name='nxtomowriter',
-    version='0.1.0-beta',
+    version=version,
     description='Output tomography data into a nexus file using the NxTomo format',
     packages=find_packages(include=['nxtomowriter']),
     install_requires=[
