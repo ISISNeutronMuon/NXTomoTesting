@@ -1,14 +1,27 @@
 from contextlib import suppress
 import datetime
+import io
 import os
+import re
 import shutil
+import sys
 import h5py
 import numpy as np
 import tifffile
 from tqdm import tqdm
 
 
-version = '0.1.0-beta'
+version = '0.2.0-beta'
+gui_run = False
+
+def use_gui(value):
+    """Set value that indicates when GUI is used 
+
+    :param value: indicates GUI is used 
+    :type value: bool
+    """
+    global gui_run
+    gui_run = value
 
 
 def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=None, rotation_axis=1):
@@ -69,9 +82,10 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=Non
         
         detector = instrument.create_group('detector')
         detector.attrs['NX_class'] = u'NXdetector'
-        
         image_count = len(image_names)
-        with tqdm(total=image_count, bar_format='{l_bar}{bar:60}{r_bar}{bar:-10b}') as progress_bar:
+        
+        f = io.StringIO() if gui_run else sys.stderr
+        with tqdm(total=image_count, bar_format='{l_bar}{bar:60}{r_bar}{bar:-10b}', file=f) as progress_bar:
             detector['image_key'] = np.array(image_keys, dtype=np.uint8)
             image = tifffile.imread(image_names[0])
             shape = (image_count, *image.shape)
@@ -82,6 +96,8 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=Non
                 image = tifffile.imread(name)
                 dset[index + 1, :, :] = image
                 progress_bar.update(1)
+                if gui_run:
+                    print(f.getvalue().split('\r ')[-1].strip())
         
         sample = entry.create_group('sample')
         sample.attrs['NX_class'] = u'NXsample'
@@ -137,8 +153,8 @@ def prepare_images(rot_angles, projections, dark_before='', flat_before='', half
                    flat_after='', dark_after=''):
     """Gets image data from given directories and place them in the appropriate order 
 
-    :param rot_angles: list of rotation angles for projection images 
-    :type rot_angles: List[float]
+    :param rot_angles: path of file with rotation angles or tuple of start and stop angles for projection images (in degrees)
+    :type rot_angles: Union[str, Tuple[float, float]]
     :param projections: directory of projection images 
     :type projections: str
     :param dark_before: directory of dark before images 
@@ -177,16 +193,41 @@ def prepare_images(rot_angles, projections, dark_before='', flat_before='', half
         image_keys.extend([key] * size)
         
         if index == 2:  # projection
+            if isinstance(rot_angles, str):
+                rot_angles = extract_angles(rot_angles)
+            elif len(rot_angles) == 2 and rot_angles[0] != rot_angles[1]:
+                rot_angles = np.linspace(rot_angles[0], rot_angles[1], size).tolist()
+            else:
+                raise ValueError('Rotation angles must be provided by specifying a logfile or start/stop angles')
+
             if size != len(rot_angles):
                 raise ValueError(f'The number of projection images {size} does not match the number of angles {len(rot_angles)}.')
+            
             angles.extend(rot_angles)
         elif index == 3:  # 180 image
             angles.extend([180.0] * size)
-        else:  # # before and after images
+        else:  # before and after images
             angles.extend([0.0] * size)
 
-
     return image_names, image_keys, angles
+
+
+def extract_angles(filename):
+    """Extracts angles from a IMAT log file or reads angles from a file
+
+    :param filename: path of file that contains rotation angles 
+    :type filename: str
+    :return: List of rotation angles
+    :rtype: List[float]
+    """
+    with open(filename) as csv_file:
+        try:
+            result  = csv_file.readlines()
+            _ = float(result[0])
+        except ValueError:
+            csv_file.seek(0)
+            result = re.findall(r"angle:\s?([-+]?\d*\.\d+|\d+)", csv_file.read(), re.MULTILINE | re.IGNORECASE)
+    return list(map(float, result))
 
 
 def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_before='', half_circle='', 
@@ -201,8 +242,8 @@ def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_b
 
     :param filename: path of nexus file 
     :type filename: str
-    :param rot_angles: list of rotation angles for projection images (in degrees)
-    :type rot_angles: List[float]
+    :param rot_angles: path of file with rotation angles or tuple of start and stop angles for projection images (in degrees)
+    :type rot_angles: Union[str, Tuple[float, float]]
     :param projections: directory of projection images 
     :type projections: str
     :param dark_before: directory of dark before images 
@@ -248,3 +289,5 @@ def save_tomo_to_nexus(filename, rot_angles, projections, dark_before='', flat_b
         shutil.copyfile(filename, out_filename)
         
     add_nxtomo_entry(out_filename, image_names, image_keys, angles, translations, rotation_axis)
+
+    return out_filename

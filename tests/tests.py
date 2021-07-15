@@ -39,9 +39,9 @@ class TestWriter(unittest.TestCase):
             np.testing.assert_array_equal(image_keys, new_file['/entry/tomo_entry/data/image_key'])
             np.testing.assert_array_almost_equal(angles, new_file['/entry/tomo_entry/data/rotation_angle'])
             self.assertEqual(new_file['/entry/tomo_entry/data/rotation_angle'].attrs['axis'], 1)
-            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], '')
-            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
-            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], '')
+            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], b'')
+            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], b'NXtomo')
+            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], b'')
 
         filename = os.path.join(self.test_dir, 'output.nxs')
        
@@ -62,9 +62,37 @@ class TestWriter(unittest.TestCase):
             np.testing.assert_array_almost_equal(translations[:, 0], new_file['/entry/tomo_entry/sample/x_translation'])
             np.testing.assert_array_almost_equal(translations[:, 1], new_file['/entry/tomo_entry/sample/y_translation'])
             np.testing.assert_array_almost_equal(translations[:, 2], new_file['/entry/tomo_entry/sample/z_translation'])
-            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], 'Sample')
-            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], 'NXtomo')
-            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], 'Title')
+            self.checkStringEqual(new_file['/entry/tomo_entry/sample/name'][()], b'Sample')
+            self.checkStringEqual(new_file['/entry/tomo_entry/definition'][()], b'NXtomo')
+            self.checkStringEqual(new_file['/entry/tomo_entry/title'][()], b'Title')
+
+    def testExtractAngles(self):
+        filename = os.path.join(self.test_dir, 'angles.txt')
+        angles = (0, 45, 90, 135, 180)
+       
+        np.savetxt(filename, angles)
+        np.testing.assert_array_almost_equal(writer.extract_angles(filename), angles)
+
+        log_data = """Sun Feb 10 00:22:04 2019   Projection:  0  angle: 0.0   Monitor 3 before:  4577907   Monitor 3 after:  4720271
+                      Sun Feb 10 00:22:37 2019   Projection:  1  angle: 45.0   Monitor 3 before:  4729337   Monitor 3 after:  4871319
+                      Sun Feb 10 00:23:10 2019   Projection:  2  angle: 90.0   Monitor 3 before:  4879923   Monitor 3 after:  5022689
+                      Sun Feb 10 00:23:43 2019   Projection:  3  angle: 135.0   Monitor 3 before:  5031423   Monitor 3 after:  5172216
+                      Sun Feb 10 00:24:16 2019   Projection:  4  angle: 180.0   Monitor 3 before:  5180904   Monitor 3 after:  5322691"""
+        with open(filename, 'w') as logfile:
+            logfile.write(log_data)
+        
+        np.testing.assert_array_almost_equal(writer.extract_angles(filename), angles)
+
+        log_data = """Sun Feb 10 00:22:04 2019,Projection:0,angle:0.0,Monitor 3 before:4577907,Monitor 3 after:4720271
+                      Sun Feb 10 00:22:37 2019,Projection:1,angle:45.0,Monitor 3 before:4729337,Monitor 3 after:4871319
+                      Sun Feb 10 00:23:10 2019,Projection:2,angle:90.0,Monitor 3 before:4879923,Monitor 3 after:5022689
+                      Sun Feb 10 00:23:43 2019,Projection:3,angle:135.0,Monitor 3 before:5031423,Monitor 3 after:5172216
+                      Sun Feb 10 00:24:16 2019,Projection:4,angle:180.0,Monitor 3 before:5180904,Monitor 3 after:5322691"""
+                      
+        with open(filename, 'w') as logfile:
+            logfile.write(log_data)
+        
+        np.testing.assert_array_almost_equal(writer.extract_angles(filename), angles)
 
     def testPrepareImages(self):
         self.assertRaises(ValueError, writer.prepare_images, [], '')
@@ -107,11 +135,16 @@ class TestWriter(unittest.TestCase):
         fb_paths = self.createFakeImages(flat_before_dir, 3)
         dark_after_dir = tempfile.mkdtemp(dir=self.test_dir)
         da_paths = self.createFakeImages(dark_after_dir, 3)
-        names, keys, angles = writer.prepare_images([0, 170], proj_dir, dark_before_dir, flat_before_dir, half_circle_dir, 
+        rot_angles = os.path.join(self.test_dir, 'angles.txt')
+        np.savetxt(rot_angles, (0, 170))
+        names, keys, angles = writer.prepare_images(rot_angles, proj_dir, dark_before_dir, flat_before_dir, half_circle_dir, 
                                                     flat_after_dir, dark_after_dir)
         self.assertEqual(names, [*db_paths, *fb_paths, *proj_paths, *hc_paths, *fa_paths, *da_paths])
         self.assertEqual(keys, [2, 2, 1, 1, 1, 0, 0, 0, 1, 1, 2, 2, 2])
         self.assertEqual(angles, [0, 0, 0, 0, 0, 0, 170, 180, 0, 0, 0, 0, 0])
+        
+        np.savetxt(rot_angles, (0, 45, 90, 135, 180))
+        self.assertRaises(ValueError, writer.prepare_images, rot_angles, proj_dir)
 
     def testGetTiffs(self):
         self.assertEqual(writer.get_tiffs(self.test_dir), [])
@@ -135,7 +168,7 @@ class TestWriter(unittest.TestCase):
         _ = self.createFakeImages(proj_dir, 5)
 
         filename = os.path.join(self.test_dir, 'random.nxs')
-        rot_angles = [0, 45, 90, 135, 180]
+        rot_angles = (0.0, 180.0)
         writer.save_tomo_to_nexus(filename, rot_angles, proj_dir)
         self.assertEqual(add_func.call_args[0][0], filename)
         add_func.assert_called()
@@ -154,23 +187,28 @@ class TestWriter(unittest.TestCase):
         _ = self.createFakeImages(flat_after_dir, 2)
 
         add_func.reset_mock()
-        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
-                                  make_copy=False, projection_position=(10, 10, 10))
+        out_filename = writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
+                                                 make_copy=False, projection_position=(10, 10, 10))
         
         trans = np.tile([10, 10, 10], (7, 1))
         add_func.assert_called()
         np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
         self.assertEqual(add_func.call_args[0][5], 1)
+        self.assertEqual(filename, out_filename)
         self.assertFalse(os.path.isfile(copy_name))
 
         add_func.reset_mock()
-        writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, rotation_axis=0, 
-                                  make_copy=True, open_beam_position=(12, 11, 9), projection_position=(10, 10, 10))
+        rot_angles = os.path.join(self.test_dir, 'angles.txt')
+        np.savetxt(rot_angles, (0, 45, 90, 135, 180))
+        out_filename = writer.save_tomo_to_nexus(filename, rot_angles, proj_dir, flat_after=flat_after_dir, 
+                                                 rotation_axis=0, make_copy=True, open_beam_position=(12, 11, 9), 
+                                                 projection_position=(10, 10, 10))
         
         trans[-2:, :] = [12, 11, 9]
         add_func.assert_called()
         np.testing.assert_array_almost_equal(add_func.call_args[0][4], trans)
         self.assertEqual(add_func.call_args[0][5], 0)
+        self.assertEqual(copy_name, out_filename)
         self.assertTrue(os.path.isfile(copy_name))
 
     @staticmethod
@@ -188,12 +226,6 @@ class TestWriter(unittest.TestCase):
         return paths
 
     def checkStringEqual(self, first, second):
-        with suppress(AttributeError):
-            first = first.decode('utf-8')
-        
-        with suppress(AttributeError):
-            second = second.decode('utf-8')
-
         self.assertEqual(first, second)
 
 if __name__ == '__main__':

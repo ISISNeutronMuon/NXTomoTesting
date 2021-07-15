@@ -1,20 +1,21 @@
-import numpy as np
 import nxtomowriter as ntw
 
 if __name__ == '__main__':  
         # Example Usage: save_tomo_to_nexus
         #  
         # if "filename" is an existing nexus file, the NXtomo entry will be appended to 
-        # the existing NXentry (/raw_data_1/tomo_entry) otherwise a new entry will be created
-        # (/entry/tomo_entry). The NXtomo entry will be appended to a copy of the nexus file if
+        # the existing NXentry (/raw_data_1/tomo_entry) otherwise a new file will be created with entry 
+        # (/entry/tomo_entry). The NXtomo entry will be appended to a copy of the existing nexus file if
         # make_copy is True (which is the default). If a tomo_entry already exist in the file, an 
         # exception will be raised.  
         filename = 'IMAT00010675.nxs'
         make_copy = True
 
         # The path of the projection images and the rotation angles in degrees are the only required data
+        # Rotation angle can either be a path to a file containing the angles or a start and stop angle in 
+        # a tuple which will be used to generate n equally spaced angles (n is the number of projection images) 
         projection_path = '//ISIS/Shares/IMAT/ExampleData/Flower_WhiteBeam/Tomo'
-        angles = np.linspace(0, 359.9584, 1143).tolist()
+        angles = (0, 359.9584)
         
         # Optional keywords
         dark_before_path = '//ISIS/Shares/IMAT/ExampleData/Flower_WhiteBeam/dark_before' 
@@ -22,7 +23,7 @@ if __name__ == '__main__':
         flat_after_path = '//ISIS/Shares/IMAT/ExampleData/Flower_WhiteBeam/flat_after'
         dark_after_path = ''
         half_circle_path = '//ISIS/Shares/IMAT/ExampleData/Flower_WhiteBeam/180deg'
-        
+
         # X Y Z positioning system values for open beam images
         open_beam_position = (370, -207, -180)  
         

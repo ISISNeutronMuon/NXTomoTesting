@@ -16,3 +16,15 @@ The code is Python 3 compatible. To run the source:
 3. Open python and type
 
         import nxtomowriter as ntw
+
+Build instruction
+-----------------
+To build the wheel 
+
+        python setup.py bdist_wheel
+
+To buid the GUI
+
+        PyInstaller build.spec
+
+

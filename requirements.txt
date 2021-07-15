@@ -1,4 +1,6 @@
+gooey
 h5py
 numpy
+pyinstaller
 tifffile
 tqdm
