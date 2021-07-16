@@ -97,7 +97,7 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=Non
                 dset[index + 1, :, :] = image
                 progress_bar.update(1)
                 if gui_run:
-                    print(f.getvalue().split('\r ')[-1].strip())
+                    print(f.getvalue().split('\r ')[-1].strip(), flush=True)
         
         sample = entry.create_group('sample')
         sample.attrs['NX_class'] = u'NXsample'

@@ -2,7 +2,7 @@ from gooey import GooeyParser, Gooey
 import nxtomowriter as ntw
 
 
-@Gooey(program_name=f'NxTomo Writer v{ntw.version}', progress_regex=r'^(\d+)%', hide_progress_msg=True)
+@Gooey(program_name=f'NxTomoWriter v{ntw.version}', progress_regex=r'^(\d+)%', hide_progress_msg=True)
 def main():
     # Required
     parser = GooeyParser(description='An application to writes tomography data to a nexus file')
@@ -76,14 +76,14 @@ def main():
         projection_position = (args.projection_position_x, args.projection_position_y , args.projection_position_z)
     
     ntw.use_gui(True)
-    print('Writing data to file ...')
+    print('Writing data to file ...', flush=True)
     out_filename = ntw.save_tomo_to_nexus(args.filename, angles, args.projection_path, dark_before=args.dark_before_path,
                                           flat_before=args.flat_before_path, flat_after=args.flat_after_path,
                                           dark_after=args.dark_after_path, open_beam_position=open_beam_position, 
                                           projection_position=projection_position, rotation_axis=rotation_axis, 
                                           make_copy=args.make_copy)
 
-    print(f'Data was saved successfully to {out_filename}')
+    print(f'Data was saved successfully to {out_filename}', flush=True)
 
 
 if __name__ == '__main__':
