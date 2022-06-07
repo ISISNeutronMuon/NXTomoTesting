@@ -1,4 +1,3 @@
-from contextlib import suppress
 import os
 import shutil
 import tempfile
@@ -159,7 +158,7 @@ class TestWriter(unittest.TestCase):
         self.file_descriptors.append(fd)
         self.assertEqual(writer.get_tiffs(self.test_dir), [])
 
-        paths = self.createFakeImages(self.test_dir, 2)
+        paths = self.createFakeImages(self.test_dir, 20)
         self.assertEqual(writer.get_tiffs(self.test_dir), paths)
 
     @mock.patch('nxtomowriter.writer.add_nxtomo_entry', autospec=True)
@@ -210,7 +209,17 @@ class TestWriter(unittest.TestCase):
         self.assertEqual(add_func.call_args[0][5], 0)
         self.assertEqual(copy_name, out_filename)
         self.assertTrue(os.path.isfile(copy_name))
+    
+    def testFileSortKey(self):
+        list_of_strings = ['home/test_034', 'home/test_031', 'home/test_033', 'home/test_032']
+        sorted_list = sorted(list_of_strings, key=writer.filename_sorting_key)
+        self.assertListEqual(sorted_list, ['home/test_031', 'home/test_032', 'home/test_033', 'home/test_034'])
 
+        list_of_strings = ['C:/home/recon001', 'C:/home/recon010', 'C:/home/recon008', 'C:/home/recon004']
+        sorted_list = sorted(list_of_strings, key=writer.filename_sorting_key)
+        self.assertListEqual(sorted_list,
+                             ['C:/home/recon001', 'C:/home/recon004', 'C:/home/recon008', 'C:/home/recon010'])
+    
     @staticmethod
     def createFakeImages(dir, count=1):
         paths = []
@@ -218,11 +227,12 @@ class TestWriter(unittest.TestCase):
         for i in range(count):
             ext = '.TIF' if i % 2 else '.tiff'
             try:
-                fd, tp =tempfile.mkstemp(dir=dir, prefix=f'{i}', suffix=ext)
-                paths.append(tp)
+                fd, tp =tempfile.mkstemp(dir=dir)    
             finally:
                 os.close(fd)
-
+            new_name = os.path.join(os.path.dirname(tp), f'test_file_{i}{ext}')
+            os.rename(tp, new_name)
+            paths.append(new_name)
         return paths
 
     def checkStringEqual(self, first, second):

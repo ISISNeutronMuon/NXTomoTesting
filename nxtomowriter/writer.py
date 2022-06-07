@@ -11,7 +11,7 @@ import tifffile
 from tqdm import tqdm
 
 
-version = '0.2.0-beta'
+version = '0.2.1-beta'
 gui_run = False
 
 def use_gui(value):
@@ -123,7 +123,21 @@ def add_nxtomo_entry(filename, image_names, image_keys, angles, translations=Non
         data['rotation_angle'].attrs['target'] = entry['sample/rotation_angle'].name
         data['image_key'] = h5py.SoftLink(entry['instrument/detector/image_key'].name)  
         data['image_key'].attrs['target'] = entry['instrument/detector/image_key'].name
-   
+
+
+def filename_sorting_key(string, regex=re.compile('(\d+)')):
+    """Returns a key for sorting filenames containing numbers in a natural way.
+
+    :param string: input string
+    :type string: str
+    :param regex: compiled regular expression object
+    :type regex: Pattern
+    :return: key for sorting files
+    :rtype: List[Union[str,int]]
+    """
+    return [int(text) if text.isdigit() else text.lower() for text in regex.split(string)]
+
+
 def get_tiffs(image_dir):
     """Gets list of tiff images in the given directory
 
@@ -146,7 +160,7 @@ def get_tiffs(image_dir):
 
             images.append(entry.path)
 
-    return sorted(images)
+    return sorted(images, key=filename_sorting_key)
 
 
 def prepare_images(rot_angles, projections, dark_before='', flat_before='', half_circle='',  
