@@ -29,7 +29,7 @@ class TestWriter(unittest.TestCase):
         rints = np.random.randint(0, np.iinfo(np.uint16).max, size=(10, 128, 128)).astype(np.uint16)
         for i in range(rints.shape[0]):
             image_names.append(os.path.join(self.test_dir, f'image_{i}.tif'))
-            tifffile.imsave(image_names[-1], rints[i])
+            tifffile.imwrite(image_names[-1], rints[i])
 
         writer.add_nxtomo_entry(filename, image_names, image_keys, angles)
 

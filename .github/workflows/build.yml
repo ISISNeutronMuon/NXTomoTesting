@@ -1,0 +1,46 @@
+name: Build
+
+on:  
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [windows-latest]
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v3
+      with:
+        python-version: 3.9
+    # Wxpython used by gooey takes too long to build
+    # - name: Pre-requisites (Linux)
+    #   if: runner.os == 'Linux'
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install libgtk-3-dev # required for Wxpython
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run unit-tests and build
+      run: |
+        python -m unittest tests/tests.py 
+        python setup.py bdist_wheel
+        python -m PyInstaller build.spec
+    - name: Upload wheel and executable file
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist (${{ runner.os }})
+        path: dist

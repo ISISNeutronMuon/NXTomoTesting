@@ -4,3 +4,4 @@ numpy
 pyinstaller
 tifffile
 tqdm
+wheel
